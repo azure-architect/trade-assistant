@@ -7,6 +7,7 @@ from datetime import datetime, date
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 
+
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -76,15 +77,21 @@ def get_next_two_expirations(expirations):
     future_expirations = [exp for exp in expirations if datetime.strptime(exp, '%Y-%m-%d').date() > today]
     return future_expirations[:2]
 
-def filter_and_format_options(options, max_delta=0.15, min_volume=250, min_open_interest=500, max_strike=30):
+def filter_and_format_options(options, max_delta=0.20, min_volume=250, min_open_interest=500, max_strike=30):
     filtered_options = []
     for option in options:
-        if (option['option_type'] == 'put' and
-            abs(float(option['greeks']['delta'])) <= max_delta and
-            int(option['volume']) >= min_volume and
-            int(option['open_interest']) >= min_open_interest and
-            float(option['strike']) <= max_strike):
-            
+        log_message = f"Option {option['symbol']} - "
+        if option['option_type'] != 'put':
+            log_message += "Filtered out: Not a PUT option. "
+        elif abs(float(option['greeks']['delta'])) > max_delta:
+            log_message += f"Filtered out: Delta ({abs(float(option['greeks']['delta']))}) > {max_delta}. "
+        elif int(option['volume']) < min_volume:
+            log_message += f"Filtered out: Volume ({int(option['volume'])}) < {min_volume}. "
+        elif int(option['open_interest']) < min_open_interest:
+            log_message += f"Filtered out: Open Interest ({int(option['open_interest'])}) < {min_open_interest}. "
+        elif float(option['strike']) > max_strike:
+            log_message += f"Filtered out: Strike ({float(option['strike'])}) > {max_strike}. "
+        else:
             formatted_option = {
                 "Symbol": option['symbol'],
                 "Strike": float(option['strike']),
@@ -98,6 +105,9 @@ def filter_and_format_options(options, max_delta=0.15, min_volume=250, min_open_
                 "Expiration": option['expiration_date']
             }
             filtered_options.append(formatted_option)
+            log_message += "Included in filtered options."
+        
+        logging.debug(log_message)
     
     return filtered_options
 
