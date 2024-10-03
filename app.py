@@ -113,7 +113,23 @@ def filter_and_format_options(options, max_delta=0.20, min_volume=250, min_open_
     return filtered_options
 
 def calculate_annualized_return(premium, strike_price, days_to_expiration):
-    return (premium / strike_price) * (365 / days_to_expiration)
+    # Calculate the return for this specific trade
+    trade_return = premium / strike_price
+
+    # Calculate how many weeks until expiration (round up to the nearest week)
+    weeks_to_expiration = math.ceil(days_to_expiration / 7)
+
+    # Calculate how many times this trade could be made in a year
+    trades_per_year = 52 / weeks_to_expiration
+
+    # Calculate the annualized return
+    annualized_return = trade_return * trades_per_year
+
+    logging.info(f"Premium: ${premium}, Strike: ${strike_price}, Days to expiration: {days_to_expiration}")
+    logging.info(f"Weeks to expiration: {weeks_to_expiration}, Trades per year: {trades_per_year}")
+    logging.info(f"Trade return: {trade_return:.2%}, Annualized return: {annualized_return:.2%}")
+
+    return annualized_return
 
 def calculate_put_call_ratio(options):
     put_volume = sum(int(option['volume']) for option in options if option['option_type'] == 'put')
@@ -211,14 +227,13 @@ def get_options():
                 put_call_ratio = calculate_put_call_ratio(option_chain)
                 outlook = interpret_put_call_ratio(put_call_ratio)
                 max_pain = calculate_max_pain(option_chain)
-                
                 expected_move = calculate_expected_move(option_chain, current_price)
                 
                 filtered_options = filter_and_format_options(option_chain)
                 formatted_options = []
                 for option in filtered_options:
                     days_to_expiration = (datetime.strptime(option['Expiration'], '%Y-%m-%d').date() - date.today()).days
-                    annualized_return = calculate_annualized_return(option['Bid'], option['Strike'], days_to_expiration)
+                    annualized_return = calculate_annualized_return(option['Ask'], option['Strike'], days_to_expiration)
                     option['Annualized Return'] = f"{annualized_return:.2%}"
                     formatted_options.append(option)
                 
