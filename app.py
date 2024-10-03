@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from datetime import datetime, date
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
+import math
 
 
 # Set up logging
@@ -146,15 +147,33 @@ def calculate_max_pain(options):
     
     return min(pain, key=pain.get)
 
-def calculate_expected_move(options, current_price, days_to_expiration):
+def calculate_expected_move(options, current_price):
+    logging.info(f"Calculating expected move for current price: {current_price}")
+
+    # Find the ATM strike
     atm_strike = min(options, key=lambda x: abs(float(x['strike']) - current_price))
+    atm_strike_price = float(atm_strike['strike'])
+    logging.info(f"Closest ATM strike: {atm_strike_price}")
+
+    # Find the ATM call and put
     atm_call = next((opt for opt in options if opt['option_type'] == 'call' and opt['strike'] == atm_strike['strike']), None)
     atm_put = next((opt for opt in options if opt['option_type'] == 'put' and opt['strike'] == atm_strike['strike']), None)
-    
+
     if atm_call and atm_put:
-        atm_straddle = float(atm_call['ask']) + float(atm_put['ask'])
-        return atm_straddle * np.sqrt(days_to_expiration / 365)
+        call_bid = float(atm_call['bid'])
+        put_bid = float(atm_put['bid'])
+        logging.info(f"ATM Call bid: {call_bid}, ATM Put bid: {put_bid}")
+
+        expected_move = call_bid + put_bid
+        logging.info(f"Calculated expected move: {expected_move}")
+
+        return expected_move
     else:
+        if not atm_call:
+            logging.warning("No ATM call option found")
+        if not atm_put:
+            logging.warning("No ATM put option found")
+        logging.warning("Unable to calculate expected move")
         return None
 
 @app.route('/')
@@ -193,8 +212,7 @@ def get_options():
                 outlook = interpret_put_call_ratio(put_call_ratio)
                 max_pain = calculate_max_pain(option_chain)
                 
-                days_to_expiration = (datetime.strptime(expiration, '%Y-%m-%d').date() - date.today()).days
-                expected_move = calculate_expected_move(option_chain, current_price, days_to_expiration)
+                expected_move = calculate_expected_move(option_chain, current_price)
                 
                 filtered_options = filter_and_format_options(option_chain)
                 formatted_options = []
@@ -206,10 +224,10 @@ def get_options():
                 
                 results[expiration] = {
                     "options": formatted_options,
-                    "put_call_ratio": put_call_ratio,
+                    "put_call_ratio": round(put_call_ratio, 2),
                     "outlook": outlook,
-                    "max_pain": max_pain,
-                    "expected_move": expected_move
+                    "max_pain": round(max_pain, 2),
+                    "expected_move": round(expected_move, 2) if expected_move is not None else None
                 }
             else:
                 results[expiration] = {
@@ -220,14 +238,13 @@ def get_options():
                     "expected_move": None
                 }
 
-        return jsonify({"current_price": current_price, "expirations": results})
+        return jsonify({"current_price": round(current_price, 2), "expirations": results})
     except ValueError as e:
         logger.error(f"ValueError: {str(e)}")
         return jsonify({"error": str(e)}), 401
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
-
 if __name__ == "__main__":
     try:
         check_api_key()
